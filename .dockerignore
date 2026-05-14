@@ -1,0 +1,29 @@
+# Dependencies — fetched inside the container
+web/node_modules/
+
+# Local frontend build artifacts — rebuilt inside Docker by the frontend-builder stage
+web/dist/
+
+# Go build outputs
+gslb
+*.exe
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Test and coverage artifacts
+*.out
+coverage/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore

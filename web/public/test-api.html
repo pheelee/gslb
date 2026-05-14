@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>API Test</h1>
+    <div id="result">Loading...</div>
+    <div id="error" style="color: red;"></div>
+    
+    <script>
+        const client = axios.create({
+            baseURL: '/api/v1',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        client.interceptors.response.use(
+            (response) => {
+                const apiResponse = response.data;
+                if (apiResponse.error) {
+                    return Promise.reject(new Error(apiResponse.error));
+                }
+                response.data = apiResponse.data;
+                return response;
+            },
+            (error) => {
+                const message = error.response?.data?.error || error.message || 'Unknown error';
+                return Promise.reject(new Error(message));
+            }
+        );
+
+        async function testAPI() {
+            try {
+                const response = await client.get('/configs');
+                document.getElementById('result').innerHTML = 
+                    '<h2>Success!</h2><pre>' + JSON.stringify(response.data, null, 2) + '</pre>';
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    '<h2>Error:</h2><pre>' + error.message + '</pre>';
+            }
+        }
+
+        testAPI();
+    </script>
+</body>
+</html>

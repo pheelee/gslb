@@ -1,0 +1,171 @@
+# GSLB - Global Server Load Balancer
+# Docker Compose configuration with all available environment variables
+#
+# Quick Start:
+#   docker-compose up -d
+#
+# With custom env file:
+#   docker-compose --env-file .env.local up -d
+#
+# View logs:
+#   docker-compose logs -f gslb
+
+services:
+  gslb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/pheelee/gslb:latest
+    container_name: gslb
+    restart: unless-stopped
+    
+    ports:
+      # HTTP API and web interface
+      - "8090:8090"
+    
+    volumes:
+      # Persistent storage for SQLite database
+      - gslb-data:/data
+      # Optional: mount config file instead of using env vars
+      # - ./gslb.yaml:/data/gslb.yaml:ro
+    
+    environment:
+      # ===================================================================
+      # CORE CONFIGURATION
+      # ===================================================================
+      
+      # Database file path (inside container)
+      # Default: gslb.db
+      - GSLB_DATABASE_PATH=${GSLB_DATABASE_PATH:-/data/gslb.db}
+      
+      # HTTP listen address
+      # Use :PORT for all interfaces, or IP:PORT for specific interface
+      # Default: :8090
+      - GSLB_LISTEN_ADDR=${GSLB_LISTEN_ADDR:-:8090}
+      
+      # Number of parallel health check workers
+      # Default: 10
+      - GSLB_HEALTH_CHECK_WORKERS=${GSLB_HEALTH_CHECK_WORKERS:-10}
+      
+      # DNS reconciliation interval (how often to sync DNS records)
+      # Format: Go duration string (e.g., 30s, 5m, 1h)
+      # Default: 30s
+      - GSLB_RECONCILE_INTERVAL=${GSLB_RECONCILE_INTERVAL:-30s}
+      
+      # Audit log retention period in days
+      # Logs older than this are automatically purged
+      # Default: 30
+      - GSLB_AUDIT_LOG_RETENTION_DAYS=${GSLB_AUDIT_LOG_RETENTION_DAYS:-30}
+      
+      # Encryption key for DNS provider credentials (hex-encoded, 64 characters = 32 bytes)
+      # HIGHLY RECOMMENDED for production!
+      # Generate: openssl rand -hex 32
+      - GSLB_ENCRYPTION_KEY=${GSLB_ENCRYPTION_KEY:-485b8f8976b428168844b4cf9523bc50}
+      
+      # ===================================================================
+      # AUTHENTICATION (OIDC) - Optional but recommended for production
+      # ===================================================================
+      
+      # Enable OIDC authentication
+      # When enabled, JWT_SECRET must be set (min 32 bytes)
+      # Default: false
+      - GSLB_OIDC_ENABLED=${GSLB_OIDC_ENABLED:-false}
+      
+      # OIDC provider issuer URL
+      # Example: https://accounts.google.com, https://auth0.com/...
+      - GSLB_OIDC_ISSUER=${GSLB_OIDC_ISSUER:-}
+      
+      # OIDC client ID (from your identity provider)
+      - GSLB_OIDC_CLIENT_ID=${GSLB_OIDC_CLIENT_ID:-}
+      
+      # OIDC client secret (from your identity provider)
+      - GSLB_OIDC_CLIENT_SECRET=${GSLB_OIDC_CLIENT_SECRET:-}
+      
+      # OIDC redirect URL (must match configuration in identity provider)
+      # Example: https://gslb.example.com/api/auth/callback
+      - GSLB_OIDC_REDIRECT_URL=${GSLB_OIDC_REDIRECT_URL:-}
+      
+      # OIDC claim name containing user roles
+      # Default: roles
+      - GSLB_OIDC_ROLES_CLAIM=${GSLB_OIDC_ROLES_CLAIM:-roles}
+
+      # Default role assigned to users on first login
+      # Options: admin, operator, viewer
+      # Default: viewer
+      - GSLB_OIDC_DEFAULT_ROLE=${GSLB_OIDC_DEFAULT_ROLE:-viewer}
+      
+      # ===================================================================
+      # JWT / SESSION CONFIGURATION
+      # ===================================================================
+      
+      # JWT signing secret (required when OIDC is enabled)
+      # Must be at least 32 bytes
+      # Generate: openssl rand -base64 32
+      - GSLB_JWT_SECRET=${GSLB_JWT_SECRET:-}
+      
+      # JWT/session expiry duration
+      # Format: Go duration string
+      # Default: 24h
+      - GSLB_JWT_EXPIRY=${GSLB_JWT_EXPIRY:-24h}
+      
+      # Session cookie name
+      # Default: gslb_session
+      - GSLB_JWT_COOKIE_NAME=${GSLB_JWT_COOKIE_NAME:-gslb_session}
+      
+      # Set Secure flag on cookies (requires HTTPS)
+      # Set to true when running behind HTTPS reverse proxy
+      # Default: false
+      - GSLB_JWT_COOKIE_SECURE=${GSLB_JWT_COOKIE_SECURE:-false}
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "/gslb", "-version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # ===================================================================
+    # HARDENING
+    # ===================================================================
+
+    # Drop every Linux capability, then add back only what is needed.
+    # The gslb binary needs no capabilities for HTTP/TCP health checks.
+    # Uncomment cap_add if ICMP health checks are configured: the kernel
+    # ignores file capabilities (set via setcap in the image) when
+    # no-new-privileges is active, so NET_RAW must be granted here.
+    cap_drop:
+      - ALL
+    # cap_add:
+    #   - NET_RAW   # required for ICMP health checks
+
+    # Prevent privilege escalation via setuid binaries or file capabilities
+    # inside the container (belt-and-suspenders alongside cap_drop).
+    security_opt:
+      - no-new-privileges:true
+
+    # Mount the root filesystem read-only; only /data (the volume) is writable.
+    # A small tmpfs is provided for any transient files the Go runtime may need.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+    # Resource limits — uncomment and tune for your environment.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 128M
+
+# Persistent volumes
+volumes:
+  gslb-data:
+    driver: local
+
+# Optional: define custom networks
+# networks:
+#   gslb-network:
+#     driver: bridge
